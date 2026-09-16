@@ -72,6 +72,7 @@ import {
 import {
   recordMediaToolResult,
   recordMediaToolResultForToolUse,
+  takeMediaToolResult,
   __resetMediaToolResultPoolForTesting,
 } from '../mcp-integrations/mediaToolResultFallback.js';
 import {
@@ -3590,6 +3591,44 @@ describe('媒体 echo 兜底:flushOrphanToolResults 从 fallback 池认领', () 
     flushOrphanToolResults(SESSION, null);
     await flushWrites();
     expect(createMessage).not.toHaveBeenCalled();
+  });
+
+  it('cindy ghost_call 正常 echo 会消费无 toolUseId fallback，避免相同重试误领旧结果', () => {
+    const toolUseInput = {
+      ghost_id: 'cindy-art',
+      tool: 'generate',
+      args: { prompt: '猫吃鱼' },
+    };
+    onToolUseEvent(
+      SESSION,
+      {
+        toolUseId: 'tu_ghost_media_echoed',
+        toolName: 'mcp:cindy:ghost_call',
+        input: toolUseInput,
+      },
+      null,
+    );
+    recordMediaToolResultForToolUse({
+      sessionId: SESSION,
+      toolName: 'mcp__cindy__ghost_call',
+      toolUseInput,
+      resultText: MEDIA_RESULT,
+    });
+
+    onToolResultFullEvent(
+      SESSION,
+      { toolUseId: 'tu_ghost_media_echoed', fullText: MEDIA_RESULT },
+      null,
+    );
+
+    expect(
+      takeMediaToolResult(
+        toolUseInput,
+        'mcp:cindy:ghost_call',
+        'tu_ghost_media_retry',
+        SESSION,
+      ),
+    ).toBeNull();
   });
 
   it('cindy ghost_call 无 echo → 按完整调用认领账本媒体结果', async () => {

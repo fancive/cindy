@@ -54,7 +54,10 @@ import { getSubagentRunDetail } from './localDb/subagentRuns.js';
 import { createLogger } from './logger.js';
 import * as broadcastTap from './device-link/broadcast-tap.js';
 import { commitMessageMediaRefs } from './cindy-media/chatAttachments.js';
-import { takeMediaToolResult } from './mcp-integrations/mediaToolResultFallback.js';
+import {
+  discardMediaToolResultForToolUse,
+  takeMediaToolResult,
+} from './mcp-integrations/mediaToolResultFallback.js';
 import { capToolResultTextForPersist } from '../shared/toolResultPersistCap.js';
 import { isGhostCallToolName } from '../shared/ghost.js';
 import { redactSensitiveText } from '@cindy/maker-shared/error-redaction';
@@ -830,6 +833,13 @@ const codexPlanRowByTurnToolUseId = new Map<
 >();
 
 const toolUseInfoBySession = new Map<string, Map<string, { toolName: string; input: unknown }>>();
+
+function discardEchoedGhostMediaFallback(sessionId: string, toolUseId: string): void {
+  const info = toolUseInfoBySession.get(sessionId)?.get(toolUseId);
+  if (!info || !isGhostCallToolName(info.toolName)) return;
+  discardMediaToolResultForToolUse(info.input, info.toolName, toolUseId, sessionId);
+}
+
 export function getHistoryToolName(sessionId: string, toolUseId: string): string {
   return toolUseInfoBySession.get(sessionId)?.get(toolUseId)?.toolName ?? '';
 }
@@ -1639,6 +1649,7 @@ export function onToolResultEvent(
     releaseBackgroundStateForToolUses(sessionId, backgroundState, ids);
     return null;
   }
+  for (const id of ids) discardEchoedGhostMediaFallback(sessionId, id);
   const idMap = backgroundState?.toolResultIdByToolUseId ??
     getOrCreateSessionMap(toolResultIdByToolUseId, sessionId);
   const pending = backgroundState?.pendingFullTextByToolUseId ??
@@ -1748,6 +1759,7 @@ export function onToolResultFullEvent(
     releaseBackgroundStateForToolUses(sessionId, backgroundState, [toolUseId]);
     return null;
   }
+  discardEchoedGhostMediaFallback(sessionId, toolUseId);
   const idMap = backgroundState?.toolResultIdByToolUseId ??
     getOrCreateSessionMap(toolResultIdByToolUseId, sessionId);
   const pending = backgroundState?.pendingFullTextByToolUseId ??

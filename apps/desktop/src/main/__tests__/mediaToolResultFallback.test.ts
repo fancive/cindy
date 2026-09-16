@@ -10,6 +10,7 @@ vi.mock('../logger.js', () => ({
 }));
 
 import {
+  discardMediaToolResultForToolUse,
   recordMediaToolResult,
   recordMediaToolResultForToolUse,
   takeMediaToolResult,
@@ -129,6 +130,42 @@ describe('mediaToolResultFallback', () => {
     expect(takeMediaToolResult(toolUseInput, toolName, 'tu-media-1', 'session-a')).toBe(
       ART_RESULT,
     );
+  });
+
+  it('ghost_call 正常 echo 只消费同 session 的对应 fallback', () => {
+    const toolUseInput = { ghost_id: 'cindy-art', tool: 'generate', args: {} };
+    recordMediaToolResultForToolUse({
+      sessionId: 'session-a',
+      toolName: 'mcp__cindy__ghost_call',
+      toolUseInput,
+      resultText: ART_RESULT,
+    });
+
+    discardMediaToolResultForToolUse(
+      toolUseInput,
+      'mcp:cindy:ghost_call',
+      'tu-media-echoed',
+      'session-b',
+    );
+    expect(
+      takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', 'tu-media-retry', 'session-a'),
+    ).toBe(ART_RESULT);
+
+    recordMediaToolResultForToolUse({
+      sessionId: 'session-a',
+      toolName: 'mcp__cindy__ghost_call',
+      toolUseInput,
+      resultText: ART_RESULT,
+    });
+    discardMediaToolResultForToolUse(
+      toolUseInput,
+      'mcp:cindy:ghost_call',
+      'tu-media-echoed',
+      'session-a',
+    );
+    expect(
+      takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', 'tu-media-retry', 'session-a'),
+    ).toBeNull();
   });
 
   it('一次性消费:同一条目不会被认领两次', () => {

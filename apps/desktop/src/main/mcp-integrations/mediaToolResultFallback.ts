@@ -12,8 +12,9 @@
  * （无 id 时按 session + 完整 input）精确配对,
  * 直接落库 + 广播,彻底解除对 stdout echo 的依赖。
  *
- * echo 正常到达时池子不被消费,条目靠 TTL 过期 — 不会产生重复消息。
- * 池子进程级共享(MCP service 是跨 session 单例),不依赖 session 归属。
+ * ghost_call 的 echo 正常到达时会消费对应条目,避免无 tool_use id 的后续相同
+ * 调用误领旧结果;旧 art / mivo 条目仍靠 TTL 过期。池子进程级共享(MCP service
+ * 是跨 session 单例),ghost_call 的精确条目额外按 session 隔离。
  */
 
 import { isDeepStrictEqual } from 'node:util';
@@ -38,6 +39,8 @@ type PendingEntry =
       toolUseId?: string;
       toolUseInput: unknown;
     });
+
+type ExactPendingEntry = Extract<PendingEntry, { match: 'exact-tool-use' }>;
 
 const TTL_MS = 15 * 60 * 1000;
 const MAX_ENTRIES = 50;
@@ -133,6 +136,46 @@ function argsMatch(toolUseArgs: Record<string, unknown>, payloadArgs: Record<str
   return hits > 0;
 }
 
+function exactToolUseMatches(
+  entry: ExactPendingEntry,
+  toolUseInput: unknown,
+  toolName?: string,
+  toolUseId?: string,
+  sessionId?: string,
+): boolean {
+  return sessionId === entry.sessionId
+    && (toolName === entry.toolName
+      || (isGhostCallToolName(toolName) && isGhostCallToolName(entry.toolName)))
+    && (entry.toolUseId
+      ? toolUseId === entry.toolUseId
+      : isDeepStrictEqual(toolUseInput, entry.toolUseInput));
+}
+
+/** 正常 echo 到达后消费对应 ghost_call 条目，防止相同重试误领旧结果。 */
+export function discardMediaToolResultForToolUse(
+  toolUseInput: unknown,
+  toolName?: string,
+  toolUseId?: string,
+  sessionId?: string,
+): void {
+  try {
+    sweep();
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const entry = pending[i];
+      if (entry.match !== 'exact-tool-use' || entry.consumed) continue;
+      if (!exactToolUseMatches(entry, toolUseInput, toolName, toolUseId, sessionId)) continue;
+      entry.consumed = true;
+      log.debug('media tool result discarded after normal echo', {
+        toolName: entry.toolName,
+        bytes: entry.resultText.length,
+      });
+      return;
+    }
+  } catch {
+    // 兜底池故障不影响工具主流程
+  }
+}
+
 /**
  * 为一个未收到 echo 的 tool_use 认领媒体结果。命中则标记 consumed 并返回
  * resultText(即应落库的 tool_result 内容);无匹配返回 null。
@@ -150,12 +193,7 @@ export function takeMediaToolResult(
     const entry = pending[i];
     if (entry.consumed || Date.now() - entry.ts > TTL_MS) continue;
     const matched = entry.match === 'exact-tool-use'
-      ? sessionId === entry.sessionId
-        && (toolName === entry.toolName
-        || (isGhostCallToolName(toolName) && isGhostCallToolName(entry.toolName)))
-        && (entry.toolUseId
-          ? toolUseId === entry.toolUseId
-          : isDeepStrictEqual(toolUseInput, entry.toolUseInput))
+      ? exactToolUseMatches(entry, toolUseInput, toolName, toolUseId, sessionId)
       : toolUseArgs !== null && argsMatch(toolUseArgs, entry.args);
     if (matched) {
       entry.consumed = true;
