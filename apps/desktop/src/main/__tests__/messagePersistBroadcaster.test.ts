@@ -3632,6 +3632,65 @@ describe('媒体 echo 兜底:flushOrphanToolResults 从 fallback 池认领', () 
     ).toBeNull();
   });
 
+  it('cindy ghost_call 并发同参调用按 echo 正文消费各自 fallback', async () => {
+    const toolName = 'mcp:cindy:ghost_call';
+    const toolUseInput = {
+      ghost_id: 'cindy-art',
+      tool: 'generate',
+      args: { prompt: '并发同一张图' },
+    };
+    const firstResult = JSON.stringify({
+      ok: true,
+      xdt_media_produced: [`cindy-media://blobs/${'c'.repeat(64)}.png`],
+    });
+    const secondResult = JSON.stringify({
+      ok: true,
+      xdt_media_produced: [`cindy-media://blobs/${'d'.repeat(64)}.png`],
+    });
+    onToolUseEvent(
+      SESSION,
+      { toolUseId: 'tu_ghost_concurrent_1', toolName, input: toolUseInput },
+      null,
+    );
+    onToolUseEvent(
+      SESSION,
+      { toolUseId: 'tu_ghost_concurrent_2', toolName, input: toolUseInput },
+      null,
+    );
+    recordMediaToolResultForToolUse({
+      sessionId: SESSION,
+      toolName,
+      toolUseInput,
+      resultText: firstResult,
+    });
+    recordMediaToolResultForToolUse({
+      sessionId: SESSION,
+      toolName,
+      toolUseInput,
+      resultText: secondResult,
+    });
+
+    onToolResultFullEvent(
+      SESSION,
+      { toolUseId: 'tu_ghost_concurrent_1', fullText: firstResult },
+      null,
+    );
+    await flushWrites();
+    vi.mocked(createMessage).mockClear();
+
+    flushOrphanToolResults(SESSION, null);
+    await flushWrites();
+    expect(createMessage).toHaveBeenCalledWith(
+      SESSION,
+      expect.objectContaining({
+        role: 'tool_result',
+        content: secondResult,
+        toolUseId: 'tu_ghost_concurrent_2',
+      }),
+      broadcastGuard(),
+    );
+  });
+
   it('cindy ghost_call 无 echo → 按完整调用认领账本媒体结果', async () => {
     const toolName = 'mcp:cindy:ghost_call';
     const toolUseInput = {

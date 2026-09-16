@@ -55,6 +55,7 @@ import { createLogger } from './logger.js';
 import * as broadcastTap from './device-link/broadcast-tap.js';
 import { commitMessageMediaRefs } from './cindy-media/chatAttachments.js';
 import {
+  clearMediaToolResultsForSession,
   discardMediaToolResultForToolUse,
   takeMediaToolResult,
 } from './mcp-integrations/mediaToolResultFallback.js';
@@ -834,10 +835,20 @@ const codexPlanRowByTurnToolUseId = new Map<
 
 const toolUseInfoBySession = new Map<string, Map<string, { toolName: string; input: unknown }>>();
 
-function discardEchoedGhostMediaFallback(sessionId: string, toolUseId: string): void {
+function discardEchoedGhostMediaFallback(
+  sessionId: string,
+  toolUseId: string,
+  echoedResultText?: string,
+): void {
   const info = toolUseInfoBySession.get(sessionId)?.get(toolUseId);
   if (!info || !isGhostCallToolName(info.toolName)) return;
-  discardMediaToolResultForToolUse(info.input, info.toolName, toolUseId, sessionId);
+  discardMediaToolResultForToolUse(
+    info.input,
+    info.toolName,
+    toolUseId,
+    sessionId,
+    echoedResultText,
+  );
 }
 
 export function getHistoryToolName(sessionId: string, toolUseId: string): string {
@@ -1790,7 +1801,7 @@ export function onToolResultFullEvent(
     releaseBackgroundStateForToolUses(sessionId, backgroundState, [toolUseId]);
     return null;
   }
-  discardEchoedGhostMediaFallback(sessionId, toolUseId);
+  discardEchoedGhostMediaFallback(sessionId, toolUseId, fullText);
   const idMap = backgroundState?.toolResultIdByToolUseId ??
     getOrCreateSessionMap(toolResultIdByToolUseId, sessionId);
   const pending = backgroundState?.pendingFullTextByToolUseId ??
@@ -2056,6 +2067,7 @@ export function flushOrphanToolResults(sessionId: string, agentMeta: AgentMeta |
 export function resetTurnPersistState(sessionId: string): void {
   // Event-stream completion is not a persistence barrier. Thinking snapshots
   // survive until their write succeeds or an explicit history/owner cleanup.
+  clearMediaToolResultsForSession(sessionId);
   toolResultIdByToolUseId.delete(sessionId);
   pendingFullTextByToolUseId.delete(sessionId);
   toolResultContentByClientId.delete(sessionId);

@@ -10,6 +10,7 @@ vi.mock('../logger.js', () => ({
 }));
 
 import {
+  clearMediaToolResultsForSession,
   discardMediaToolResultForToolUse,
   recordMediaToolResult,
   recordMediaToolResultForToolUse,
@@ -146,6 +147,7 @@ describe('mediaToolResultFallback', () => {
       'mcp:cindy:ghost_call',
       'tu-media-echoed',
       'session-b',
+      ART_RESULT,
     );
     expect(
       takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', 'tu-media-retry', 'session-a'),
@@ -162,10 +164,61 @@ describe('mediaToolResultFallback', () => {
       'mcp:cindy:ghost_call',
       'tu-media-echoed',
       'session-a',
+      ART_RESULT,
     );
     expect(
       takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', 'tu-media-retry', 'session-a'),
     ).toBeNull();
+  });
+
+  it('ghost_call 无 toolUseId 的并发同参结果必须先由 echo 正文消歧', () => {
+    const toolUseInput = { ghost_id: 'cindy-art', tool: 'generate', args: {} };
+    recordMediaToolResultForToolUse({
+      sessionId: 'session-a',
+      toolName: 'mcp:cindy:ghost_call',
+      toolUseInput,
+      resultText: 'first-result',
+    });
+    recordMediaToolResultForToolUse({
+      sessionId: 'session-a',
+      toolName: 'mcp:cindy:ghost_call',
+      toolUseInput,
+      resultText: 'second-result',
+    });
+
+    expect(
+      takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', 'tu-2', 'session-a'),
+    ).toBeNull();
+    discardMediaToolResultForToolUse(
+      toolUseInput,
+      'mcp:cindy:ghost_call',
+      'tu-1',
+      'session-a',
+      'first-result',
+    );
+    expect(
+      takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', 'tu-2', 'session-a'),
+    ).toBe('second-result');
+  });
+
+  it('turn 收口只清除指定 session 的 ghost_call fallback', () => {
+    const toolUseInput = { ghost_id: 'cindy-art', tool: 'generate', args: {} };
+    for (const sessionId of ['session-a', 'session-b']) {
+      recordMediaToolResultForToolUse({
+        sessionId,
+        toolName: 'mcp:cindy:ghost_call',
+        toolUseInput,
+        resultText: `${sessionId}-result`,
+      });
+    }
+
+    clearMediaToolResultsForSession('session-a');
+    expect(
+      takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', 'tu-a', 'session-a'),
+    ).toBeNull();
+    expect(
+      takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', 'tu-b', 'session-b'),
+    ).toBe('session-b-result');
   });
 
   it('一次性消费:同一条目不会被认领两次', () => {
