@@ -1703,7 +1703,10 @@ export function getCindyGhostsMcpDeps(
       return service.request(sessionId, target);
     },
     onGhostToolResult: ({ input, resultText, toolUseId }) => {
+      const sessionId = resolveSessionContext()?.sessionId;
+      if (!sessionId) return;
       recordMediaToolResultForToolUse({
+        sessionId,
         toolName: 'mcp__cindy__ghost_call',
         toolUseInput: input,
         resultText,

@@ -92,26 +92,43 @@ describe('mediaToolResultFallback', () => {
   it('ghost_call 按完整工具名和 input 精确认领，包括空 args', () => {
     const toolName = 'mcp__cindy__ghost_call';
     const toolUseInput = { ghost_id: 'cindy-art', tool: 'generate', args: {} };
-    recordMediaToolResultForToolUse({ toolName, toolUseInput, resultText: ART_RESULT });
+    recordMediaToolResultForToolUse({
+      sessionId: 'session-a',
+      toolName,
+      toolUseInput,
+      resultText: ART_RESULT,
+    });
 
     expect(takeMediaToolResult(toolUseInput, 'mcp__other__ghost_call')).toBeNull();
-    expect(takeMediaToolResult({ ...toolUseInput, args: {} }, 'mcp:cindy:ghost_call')).toBe(
-      ART_RESULT,
-    );
+    expect(
+      takeMediaToolResult(toolUseInput, 'mcp:cindy:ghost_call', undefined, 'session-b'),
+    ).toBeNull();
+    expect(
+      takeMediaToolResult(
+        { ...toolUseInput, args: {} },
+        'mcp:cindy:ghost_call',
+        undefined,
+        'session-a',
+      ),
+    ).toBe(ART_RESULT);
   });
 
   it('ghost_call 有 toolUseId 时拒绝同 input 的其他调用认领', () => {
     const toolName = 'mcp:cindy:ghost_call';
     const toolUseInput = { ghost_id: 'cindy-art', tool: 'generate', args: {} };
     recordMediaToolResultForToolUse({
+      sessionId: 'session-a',
       toolName: 'mcp__cindy__ghost_call',
       toolUseId: 'tu-media-1',
       toolUseInput,
       resultText: ART_RESULT,
     });
 
-    expect(takeMediaToolResult(toolUseInput, toolName, 'tu-media-2')).toBeNull();
-    expect(takeMediaToolResult(toolUseInput, toolName, 'tu-media-1')).toBe(ART_RESULT);
+    expect(takeMediaToolResult(toolUseInput, toolName, 'tu-media-1', 'session-b')).toBeNull();
+    expect(takeMediaToolResult(toolUseInput, toolName, 'tu-media-2', 'session-a')).toBeNull();
+    expect(takeMediaToolResult(toolUseInput, toolName, 'tu-media-1', 'session-a')).toBe(
+      ART_RESULT,
+    );
   });
 
   it('一次性消费:同一条目不会被认领两次', () => {

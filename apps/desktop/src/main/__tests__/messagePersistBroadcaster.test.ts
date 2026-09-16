@@ -3609,6 +3609,7 @@ describe('媒体 echo 兜底:flushOrphanToolResults 从 fallback 池认领', () 
       null,
     );
     recordMediaToolResultForToolUse({
+      sessionId: SESSION,
       toolName: 'mcp__cindy__ghost_call',
       toolUseId: 'tu_ghost_media_lost',
       toolUseInput,

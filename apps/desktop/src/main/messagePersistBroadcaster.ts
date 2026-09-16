@@ -1992,7 +1992,7 @@ export function flushOrphanToolResults(sessionId: string, agentMeta: AgentMeta |
       ) {
         continue;
       }
-      const reclaimed = takeMediaToolResult(info.input, info.toolName, toolUseId);
+      const reclaimed = takeMediaToolResult(info.input, info.toolName, toolUseId, sessionId);
       if (reclaimed !== null) {
         log.info('media tool_result reclaimed via fallback pool (echo lost)', {
           sessionId,

@@ -9,7 +9,7 @@
  * Host dep 同步塞进这里;turn 结束时 messagePersistBroadcaster
  * 的 flushOrphanToolResults 发现"有 tool_use 但没等到 tool_result"的媒体工具
  * 调用,旧 art / mivo 按语义 args 配对,ghost_call 按工具名 + tool_use id
- * （无 id 时按完整 input）精确配对,
+ * （无 id 时按 session + 完整 input）精确配对,
  * 直接落库 + 广播,彻底解除对 stdout echo 的依赖。
  *
  * echo 正常到达时池子不被消费,条目靠 TTL 过期 — 不会产生重复消息。
@@ -33,6 +33,7 @@ type PendingEntry =
   | (PendingEntryBase & { match: 'semantic-args'; args: Record<string, unknown> })
   | (PendingEntryBase & {
       match: 'exact-tool-use';
+      sessionId: string;
       toolName: string;
       toolUseId?: string;
       toolUseInput: unknown;
@@ -76,6 +77,7 @@ export function recordMediaToolResult(payload: MediaToolResultPayload): void {
  * 业务 args，不能沿用旧 art / mivo 的「至少一个语义键」配对。
  */
 export function recordMediaToolResultForToolUse(payload: {
+  sessionId: string;
   toolName: string;
   toolUseId?: string;
   toolUseInput: unknown;
@@ -139,6 +141,7 @@ export function takeMediaToolResult(
   toolUseInput: unknown,
   toolName?: string,
   toolUseId?: string,
+  sessionId?: string,
 ): string | null {
   const toolUseArgs = extractCallArgs(toolUseInput);
   // 从新到旧遍历:同键条目(如同一按钮 TTL 内重复触发)认领最近一次的结果,
@@ -147,7 +150,8 @@ export function takeMediaToolResult(
     const entry = pending[i];
     if (entry.consumed || Date.now() - entry.ts > TTL_MS) continue;
     const matched = entry.match === 'exact-tool-use'
-      ? (toolName === entry.toolName
+      ? sessionId === entry.sessionId
+        && (toolName === entry.toolName
         || (isGhostCallToolName(toolName) && isGhostCallToolName(entry.toolName)))
         && (entry.toolUseId
           ? toolUseId === entry.toolUseId
