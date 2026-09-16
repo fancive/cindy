@@ -1606,9 +1606,40 @@ function toolResultMeta(sessionId: string, agentMeta: AgentMeta | null): AgentMe
  * 不在这里补挂就会被 recycler 判零引用回收(聊天历史永久缺图)。幂等(hasRef
  * 跳过),失败仅 warn,不阻断落库。
  */
-function persistableToolResultContent(sessionId: string, fullText: string): string {
+function mediaToolResultProjectionForPersist(fullText: string): string | null {
+  try {
+    const parsed = JSON.parse(fullText) as Record<string, unknown> | null;
+    if (!parsed || Array.isArray(parsed) || !Array.isArray(parsed.xdt_media_produced)) return null;
+    const producedMedia = parsed.xdt_media_produced.filter(
+      (value): value is string =>
+        typeof value === 'string'
+        && /^cindy-media:\/\/blobs\/[0-9a-f]{64}\.[a-z0-9]+$/.test(value),
+    );
+    if (producedMedia.length === 0) return null;
+    const projection = JSON.stringify({
+      ...(typeof parsed.ok === 'boolean' ? { ok: parsed.ok } : {}),
+      ...(parsed._xdt_render_image === false ? { _xdt_render_image: false } : {}),
+      xdt_media_produced: producedMedia,
+      _xdt_tool_result_truncated: true,
+    });
+    // 媒体引用本身超过普通正文预算时宁可保留这个最小结构化投影；再次截断
+    // 会把 JSON 变成不可解析文本，历史重载与 Mobile 都会永久丢失产物。
+    return projection;
+  } catch {
+    return null;
+  }
+}
+
+function toolResultContentForPersist(fullText: string): string {
   const capped = capToolResultTextForPersist(fullText);
-  if (capped !== fullText) {
+  if (capped === fullText) return fullText;
+  const mediaProjection = mediaToolResultProjectionForPersist(fullText);
+  return mediaProjection ?? capped;
+}
+
+function persistableToolResultContent(sessionId: string, fullText: string): string {
+  const persisted = toolResultContentForPersist(fullText);
+  if (persisted !== fullText) {
     void commitMessageMediaRefs({ sessionId, role: 'tool_result', content: fullText }).catch(
       (err) => {
         log.warn('tool_result media ref commit failed (pre-truncation)', {
@@ -1618,7 +1649,7 @@ function persistableToolResultContent(sessionId: string, fullText: string): stri
       },
     );
   }
-  return capped;
+  return persisted;
 }
 
 /**
@@ -1697,7 +1728,7 @@ export function onToolResultEvent(
     // contentMap 存全文(增长比较与 renderer 显示都要它);DB 只落有界内容。
     // 截断后内容没变(全文都在 8KB 之外增长)就跳过 UPDATE——省掉重复写同一
     // 前缀,也省掉 messages 表 UPDATE 附带的 FTS 触发器开销。
-    const cappedPrev = capToolResultTextForPersist(prev);
+    const cappedPrev = toolResultContentForPersist(prev);
     contentMap.set(existing, content);
     const capped = persistableToolResultContent(sessionId, content);
     if (capped !== cappedPrev) {
@@ -1802,7 +1833,7 @@ export function onToolResultFullEvent(
   if (prev === fullText) return null; // 幂等:内容没变,renderer 无需更新。
   // 同 onToolResultEvent 增长分支:contentMap 存全文,DB 只落有界内容,截断后
   // 内容不变则跳过 UPDATE(renderer 仍拿全文刷新显示)。
-  const cappedPrev = prev === undefined ? undefined : capToolResultTextForPersist(prev);
+  const cappedPrev = prev === undefined ? undefined : toolResultContentForPersist(prev);
   contentMap.set(target, fullText);
   const capped = persistableToolResultContent(sessionId, fullText);
   if (capped !== cappedPrev) {

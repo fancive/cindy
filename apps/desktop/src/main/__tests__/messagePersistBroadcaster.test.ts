@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { extractPayloadToolResultMedia } from '@cindy/maker-shared/payload-summary';
 
 vi.mock('../localDb/ipc/messages.js', () => ({
   broadcastMessageAgentMetaUpdate: vi.fn(async () => true),
@@ -3668,6 +3669,44 @@ describe('媒体 echo 兜底:flushOrphanToolResults 从 fallback 池认领', () 
       }),
       broadcastGuard(),
     );
+  });
+
+  it('cindy ghost_call 大结果 fallback 落库时保留可解析的媒体投影', async () => {
+    const toolName = 'mcp:cindy:ghost_call';
+    const toolUseInput = {
+      ghost_id: 'cindy-art',
+      tool: 'generate',
+      args: { prompt: '画一张大图' },
+    };
+    const imageUrl = `cindy-media://blobs/${'b'.repeat(64)}.png`;
+    const result = JSON.stringify({
+      ok: true,
+      result: { debug: 'x'.repeat(16 * 1024) },
+      xdt_media_produced: [imageUrl],
+    });
+    onToolUseEvent(
+      SESSION,
+      { toolUseId: 'tu_ghost_media_large', toolName, input: toolUseInput },
+      null,
+    );
+    recordMediaToolResultForToolUse({
+      sessionId: SESSION,
+      toolName,
+      toolUseId: 'tu_ghost_media_large',
+      toolUseInput,
+      resultText: result,
+    });
+    await flushWrites();
+    vi.mocked(createMessage).mockClear();
+
+    flushOrphanToolResults(SESSION, null);
+    await flushWrites();
+    const content = vi.mocked(createMessage).mock.calls[0]?.[1]?.content;
+    expect(typeof content).toBe('string');
+    expect(() => JSON.parse(content as string)).not.toThrow();
+    expect(extractPayloadToolResultMedia(content as string)).toEqual([
+      expect.objectContaining({ kind: 'image', url: imageUrl }),
+    ]);
   });
 
   it('非 lizi 媒体工具的 tool_use 不参与认领', async () => {
