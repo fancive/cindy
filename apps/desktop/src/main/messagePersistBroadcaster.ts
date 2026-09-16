@@ -56,6 +56,7 @@ import * as broadcastTap from './device-link/broadcast-tap.js';
 import { commitMessageMediaRefs } from './cindy-media/chatAttachments.js';
 import { takeMediaToolResult } from './mcp-integrations/mediaToolResultFallback.js';
 import { capToolResultTextForPersist } from '../shared/toolResultPersistCap.js';
+import { isGhostCallToolName } from '../shared/ghost.js';
 import { redactSensitiveText } from '@cindy/maker-shared/error-redaction';
 import { parseBrowserProxyServer } from '@cindy/browser-control-runtime';
 import {
@@ -1987,7 +1988,7 @@ export function flushOrphanToolResults(sessionId: string, agentMeta: AgentMeta |
       if (
         !info.toolName.startsWith('mcp__lizi_art__')
         && !info.toolName.startsWith('mcp__lizi_mivo__')
-        && info.toolName !== 'mcp__cindy__ghost_call'
+        && !isGhostCallToolName(info.toolName)
       ) {
         continue;
       }

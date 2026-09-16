@@ -18,6 +18,7 @@
 
 import { isDeepStrictEqual } from 'node:util';
 import type { MediaToolResultPayload } from '@cindy/mcps';
+import { isGhostCallToolName } from '../../shared/ghost.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('mediaToolResultFallback');
@@ -146,7 +147,8 @@ export function takeMediaToolResult(
     const entry = pending[i];
     if (entry.consumed || Date.now() - entry.ts > TTL_MS) continue;
     const matched = entry.match === 'exact-tool-use'
-      ? toolName === entry.toolName
+      ? (toolName === entry.toolName
+        || (isGhostCallToolName(toolName) && isGhostCallToolName(entry.toolName)))
         && (entry.toolUseId
           ? toolUseId === entry.toolUseId
           : isDeepStrictEqual(toolUseInput, entry.toolUseInput))

@@ -3593,7 +3593,7 @@ describe('媒体 echo 兜底:flushOrphanToolResults 从 fallback 池认领', () 
   });
 
   it('cindy ghost_call 无 echo → 按完整调用认领账本媒体结果', async () => {
-    const toolName = 'mcp__cindy__ghost_call';
+    const toolName = 'mcp:cindy:ghost_call';
     const toolUseInput = {
       ghost_id: 'cindy-art',
       tool: 'generate',
@@ -3609,7 +3609,7 @@ describe('媒体 echo 兜底:flushOrphanToolResults 从 fallback 池认领', () 
       null,
     );
     recordMediaToolResultForToolUse({
-      toolName,
+      toolName: 'mcp__cindy__ghost_call',
       toolUseId: 'tu_ghost_media_lost',
       toolUseInput,
       resultText: result,
