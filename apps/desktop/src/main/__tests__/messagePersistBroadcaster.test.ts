@@ -71,6 +71,7 @@ import {
 } from '../localDb/codexPlanState.js';
 import {
   recordMediaToolResult,
+  recordMediaToolResultForToolUse,
   __resetMediaToolResultPoolForTesting,
 } from '../mcp-integrations/mediaToolResultFallback.js';
 import {
@@ -3589,6 +3590,44 @@ describe('媒体 echo 兜底:flushOrphanToolResults 从 fallback 池认领', () 
     flushOrphanToolResults(SESSION, null);
     await flushWrites();
     expect(createMessage).not.toHaveBeenCalled();
+  });
+
+  it('cindy ghost_call 无 echo → 按完整调用认领账本媒体结果', async () => {
+    const toolName = 'mcp__cindy__ghost_call';
+    const toolUseInput = {
+      ghost_id: 'cindy-art',
+      tool: 'generate',
+      args: { prompt: '猫吃鱼' },
+    };
+    const result = JSON.stringify({
+      ok: true,
+      xdt_media_produced: [`cindy-media://blobs/${'a'.repeat(64)}.png`],
+    });
+    onToolUseEvent(
+      SESSION,
+      { toolUseId: 'tu_ghost_media_lost', toolName, input: toolUseInput },
+      null,
+    );
+    recordMediaToolResultForToolUse({
+      toolName,
+      toolUseId: 'tu_ghost_media_lost',
+      toolUseInput,
+      resultText: result,
+    });
+    await flushWrites();
+    vi.mocked(createMessage).mockClear();
+
+    flushOrphanToolResults(SESSION, null);
+    await flushWrites();
+    expect(createMessage).toHaveBeenCalledWith(
+      SESSION,
+      expect.objectContaining({
+        role: 'tool_result',
+        content: result,
+        toolUseId: 'tu_ghost_media_lost',
+      }),
+      broadcastGuard(),
+    );
   });
 
   it('非 lizi 媒体工具的 tool_use 不参与认领', async () => {

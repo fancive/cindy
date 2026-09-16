@@ -44,6 +44,7 @@ import {
   type SessionPathAuthorization,
   type SessionPathAuthorizationRequest,
 } from '@cindy/mcps';
+import { recordMediaToolResultForToolUse } from './mediaToolResultFallback.js';
 
 import {
   GRANT_AUTHORIZATION_CHANGED_MESSAGE,
@@ -1700,6 +1701,14 @@ export function getCindyGhostsMcpDeps(
       const service = getBotAuthorizationService();
       if (!service) return { ok: false, errorCode: 'HOST_NOT_READY' };
       return service.request(sessionId, target);
+    },
+    onGhostToolResult: ({ input, resultText, toolUseId }) => {
+      recordMediaToolResultForToolUse({
+        toolName: 'mcp__cindy__ghost_call',
+        toolUseInput: input,
+        resultText,
+        ...(toolUseId ? { toolUseId } : {}),
+      });
     },
     callMedia: async (request) => {
       const sessionContext = resolveSessionContext();

@@ -1973,7 +1973,7 @@ export function flushOrphanToolResults(sessionId: string, agentMeta: AgentMeta |
   }
 
   // 媒体 echo 兜底:本 turn 已落库 tool_use、但 echo(tool_result/full)始终没到
-  // 的 lizi_art / lizi_mivo 调用,按 input.args 去 mediaToolResultFallback 池认领
+  // 的旧 lizi 媒体工具或当前 cindy ghost_call 调用,去 mediaToolResultFallback 池认领
   // 工具在 main 内产出的结果直接落库(stdout echo 被日志污染损坏的场景;见
   // mcp-integrations/mediaToolResultFallback.ts)。echo 正常时 idMap 已有映射,
   // 这里不会触发,不产生重复。
@@ -1984,10 +1984,14 @@ export function flushOrphanToolResults(sessionId: string, agentMeta: AgentMeta |
       if (idMap.has(toolUseId)) continue;
       const info = infoMap.get(toolUseId);
       if (!info) continue;
-      if (!info.toolName.startsWith('mcp__lizi_art__') && !info.toolName.startsWith('mcp__lizi_mivo__')) {
+      if (
+        !info.toolName.startsWith('mcp__lizi_art__')
+        && !info.toolName.startsWith('mcp__lizi_mivo__')
+        && info.toolName !== 'mcp__cindy__ghost_call'
+      ) {
         continue;
       }
-      const reclaimed = takeMediaToolResult(info.input);
+      const reclaimed = takeMediaToolResult(info.input, info.toolName, toolUseId);
       if (reclaimed !== null) {
         log.info('media tool_result reclaimed via fallback pool (echo lost)', {
           sessionId,
