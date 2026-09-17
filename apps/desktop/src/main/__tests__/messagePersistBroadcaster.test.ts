@@ -3768,6 +3768,50 @@ describe('媒体 echo 兜底:flushOrphanToolResults 从 fallback 池认领', () 
     ]);
   });
 
+  it('cindy ghost_call 大结果 fallback 落库时保留已声明的图片、视频和音频', async () => {
+    const toolName = 'mcp:cindy:ghost_call';
+    const toolUseInput = {
+      ghost_id: 'cindy-media',
+      tool: 'generate',
+      args: { prompt: '生成多媒体结果' },
+    };
+    const imageUrl = `cindy-media://blobs/${'c'.repeat(64)}.png`;
+    const videoUrl = `cindy-media://blobs/${'d'.repeat(64)}.mp4`;
+    const audioUrl = `cindy-media://blobs/${'e'.repeat(64)}.mp3`;
+    const result = JSON.stringify({
+      ok: true,
+      result: { debug: 'x'.repeat(16 * 1024) },
+      xdt_image_urls: [imageUrl],
+      xdt_video_urls: [videoUrl],
+      xdt_audio_tracks: [{ xdt_audio_url: audioUrl, title: '生成音频' }],
+    });
+    onToolUseEvent(
+      SESSION,
+      { toolUseId: 'tu_ghost_declared_media_large', toolName, input: toolUseInput },
+      null,
+    );
+    recordMediaToolResultForToolUse({
+      sessionId: SESSION,
+      toolName,
+      toolUseId: 'tu_ghost_declared_media_large',
+      toolUseInput,
+      resultText: result,
+    });
+    await flushWrites();
+    vi.mocked(createMessage).mockClear();
+
+    flushOrphanToolResults(SESSION, null);
+    await flushWrites();
+    const content = vi.mocked(createMessage).mock.calls[0]?.[1]?.content;
+    expect(typeof content).toBe('string');
+    expect(() => JSON.parse(content as string)).not.toThrow();
+    expect(extractPayloadToolResultMedia(content as string)).toEqual([
+      expect.objectContaining({ kind: 'image', url: imageUrl }),
+      expect.objectContaining({ kind: 'video', url: videoUrl }),
+      expect.objectContaining({ kind: 'audio', url: audioUrl, title: '生成音频' }),
+    ]);
+  });
+
   it('非 lizi 媒体工具的 tool_use 不参与认领', async () => {
     onToolUseEvent(
       SESSION,

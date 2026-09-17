@@ -1620,17 +1620,67 @@ function toolResultMeta(sessionId: string, agentMeta: AgentMeta | null): AgentMe
 function mediaToolResultProjectionForPersist(fullText: string): string | null {
   try {
     const parsed = JSON.parse(fullText) as Record<string, unknown> | null;
-    if (!parsed || Array.isArray(parsed) || !Array.isArray(parsed.xdt_media_produced)) return null;
-    const producedMedia = parsed.xdt_media_produced.filter(
+    if (!parsed || Array.isArray(parsed)) return null;
+    const managedUrls = (value: unknown, schemes: readonly string[]): string[] =>
+      Array.isArray(value)
+        ? value.filter(
+            (entry): entry is string =>
+              typeof entry === 'string' && schemes.some((scheme) => entry.startsWith(scheme)),
+          )
+        : [];
+    const managedUrl = (value: unknown, schemes: readonly string[]): string | null =>
+      typeof value === 'string' && schemes.some((scheme) => value.startsWith(scheme))
+        ? value
+        : null;
+    const imageSchemes = ['cindy-media://', 'xdt-image://'] as const;
+    const videoSchemes = ['cindy-media://', 'xdt-video://'] as const;
+    const audioSchemes = ['cindy-media://', 'xdt-audio://'] as const;
+    const imageUrl = managedUrl(parsed.xdt_image_url, imageSchemes);
+    const imageUrls = managedUrls(parsed.xdt_image_urls, imageSchemes);
+    const videoUrl = managedUrl(parsed.xdt_video_url, videoSchemes);
+    const videoUrls = managedUrls(parsed.xdt_video_urls, videoSchemes);
+    const audioTracks = Array.isArray(parsed.xdt_audio_tracks)
+      ? parsed.xdt_audio_tracks.filter((entry): entry is Record<string, unknown> => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+          return managedUrl((entry as Record<string, unknown>).xdt_audio_url, audioSchemes) !== null;
+        })
+      : [];
+    const legacyAudioTracks = Array.isArray(parsed._xdt_audio_tracks)
+      ? parsed._xdt_audio_tracks.filter((entry): entry is Record<string, unknown> => {
+          if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+          const record = entry as Record<string, unknown>;
+          return managedUrl(record.xdt_audio_url ?? record.audioUrl, audioSchemes) !== null;
+        })
+      : [];
+    const audioUrls = managedUrls(parsed.xdt_audio_urls, audioSchemes);
+    const producedMedia = (Array.isArray(parsed.xdt_media_produced)
+      ? parsed.xdt_media_produced
+      : []).filter(
       (value): value is string =>
         typeof value === 'string'
         && /^cindy-media:\/\/blobs\/[0-9a-f]{64}\.[a-z0-9]+$/.test(value),
     );
-    if (producedMedia.length === 0) return null;
+    if (
+      !imageUrl
+      && imageUrls.length === 0
+      && !videoUrl
+      && videoUrls.length === 0
+      && audioTracks.length === 0
+      && legacyAudioTracks.length === 0
+      && audioUrls.length === 0
+      && producedMedia.length === 0
+    ) return null;
     const projection = JSON.stringify({
       ...(typeof parsed.ok === 'boolean' ? { ok: parsed.ok } : {}),
       ...(parsed._xdt_render_image === false ? { _xdt_render_image: false } : {}),
-      xdt_media_produced: producedMedia,
+      ...(imageUrl ? { xdt_image_url: imageUrl } : {}),
+      ...(imageUrls.length > 0 ? { xdt_image_urls: imageUrls } : {}),
+      ...(videoUrl ? { xdt_video_url: videoUrl } : {}),
+      ...(videoUrls.length > 0 ? { xdt_video_urls: videoUrls } : {}),
+      ...(audioTracks.length > 0 ? { xdt_audio_tracks: audioTracks } : {}),
+      ...(legacyAudioTracks.length > 0 ? { _xdt_audio_tracks: legacyAudioTracks } : {}),
+      ...(audioUrls.length > 0 ? { xdt_audio_urls: audioUrls } : {}),
+      ...(producedMedia.length > 0 ? { xdt_media_produced: producedMedia } : {}),
       _xdt_tool_result_truncated: true,
     });
     // 媒体引用本身超过普通正文预算时宁可保留这个最小结构化投影；再次截断
